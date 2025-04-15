@@ -15,5 +15,5 @@ jobs:
         uses: jeonghlee12/jupyter-to-pages@master
         with:
           show-cells: true
-          source: src
+          source: src/EM
           dependencies: deps.txt
