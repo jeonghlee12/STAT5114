@@ -1,0 +1,19 @@
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: STAT 5114
+        uses: jeonghlee12/jupyter-to-pages@master
+        with:
+          show-cells: true
+          source: EM
+          dependencies: deps.txt
