@@ -1,6 +1,6 @@
 site_name: STAT 5114
 
-docs_dir: .
+docs_dir: src
 
 theme:
   name: material
