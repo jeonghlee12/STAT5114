@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
 from matplotlib.animation import FuncAnimation
+from itertools import permutations
 
 def gen_data(k, p, N, pi_0, lim = [-10, 10]):
     '''
@@ -122,3 +123,96 @@ def animate_plot(snapshots, X, k, true_means, true_covs, init_kmeans, filename):
 
     anim = FuncAnimation(fig, update, frames = len(iterations), interval = 1000, repeat = False)
     return anim
+
+def best_mse(true, predicted):
+    # Generate all permutations of the true means
+    perm_indices = permutations(range(len(true)))
+    min_mse = float('inf')
+
+    best_indices = [1, 2, 3]
+
+    for idx in perm_indices:
+        permuted_true = true[list(idx)]
+        mse = np.mean(np.sum((predicted - permuted_true) ** 2, axis=1))
+        if mse < min_mse:
+            min_mse = mse
+            best_indices = idx
+    
+    return min_mse, best_indices
+
+def cov_comp(true, predicted, best_indices):
+    aligned_true_covs = true[list(best_indices)]
+
+    det_diffs = []
+    trace_diffs = []
+    frobenius_norms = []
+
+    for pred, true in zip(predicted, aligned_true_covs):
+        det_diff = abs(np.linalg.det(pred) - np.linalg.det(true))
+        trace_diff = abs(np.trace(pred) - np.trace(true))
+        frob_norm = np.linalg.norm(pred - true, ord='fro')
+
+        det_diffs.append(det_diff)
+        trace_diffs.append(trace_diff)
+        frobenius_norms.append(frob_norm)
+    
+    det_diffs = np.array(det_diffs)
+    trace_diffs = np.array(trace_diffs)
+    frobenius_norms = np.array(frobenius_norms)
+
+    avg_det_diff = np.mean(det_diffs)
+    avg_trace_diff = np.mean(trace_diffs)
+    avg_frobenius_norm = np.mean(frobenius_norms)
+
+    return avg_det_diff, avg_trace_diff, avg_frobenius_norm
+
+def kl_gaussian(mu0, cov0, mu1, cov1):
+    d = mu0.shape[0]
+    cov1_inv = np.linalg.inv(cov1)
+    diff = mu1 - mu0
+
+    term1 = np.log(np.linalg.det(cov1) / np.linalg.det(cov0) + 1e-12)
+    term2 = np.trace(cov1_inv @ cov0)
+    term3 = diff.T @ cov1_inv @ diff
+
+    return 0.5 * (term1 - d + term2 + term3)
+
+def get_KL_div(true_means, true_covs, mus, sigmas, best_indices):
+    aligned_true_means = true_means[list(best_indices)]
+    aligned_true_covs = true_covs[list(best_indices)]
+    kl_scores = []
+
+    for i in range(3):
+        mu_true = aligned_true_means[i]
+        cov_true = aligned_true_covs[i]
+        mu_pred = mus[i]
+        cov_pred = sigmas[i]
+
+        kl = kl_gaussian(mu_true, cov_true, mu_pred, cov_pred)
+        kl_scores.append(kl)
+
+    kl_scores = np.array(kl_scores)
+    avg_kl = kl_scores.mean()
+
+    return avg_kl
+
+def get_KL_pi(true_pis, pis, best_indices):
+    def safe_kl(p_true, p_pred, epsilon=1e-12):
+        p_true = np.clip(p_true, epsilon, 1)
+        p_pred = np.clip(p_pred, epsilon, 1)
+        return np.sum(p_true * np.log(p_true / p_pred))
+
+    aligned_true_pis = true_pis[list(best_indices)]
+
+    kl_true_to_pred = safe_kl(aligned_true_pis, pis)
+    
+    return kl_true_to_pred
+
+def compute_accuracy(true_means, true_covs, true_pis, mus, sigmas, pis):
+
+    mse, best_perm = best_mse(true_means, mus)
+    cov_results = cov_comp(true_covs, sigmas, best_perm)
+    avg_kl_gauss = get_KL_div(true_means, true_covs, mus, sigmas, best_perm)
+    avg_kl_pi = get_KL_pi(np.array(true_pis), pis, best_perm)
+
+    return (mse, cov_results, avg_kl_gauss, avg_kl_pi)
