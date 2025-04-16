@@ -94,7 +94,7 @@ def plot_data(X, k, title, ax, true_param = None, estimator = None):
     ax.set_ylabel(r"$x_2$")
     plt.show()
 
-def animate_plot(snapshots, X, k, true_means, true_covs, filename):
+def animate_plot(snapshots, X, k, true_means, true_covs, init_kmeans, filename):
     fig, ax = plt.subplots(figsize=(6, 6))
     iterations = sorted(snapshots.keys())
 
@@ -105,7 +105,10 @@ def animate_plot(snapshots, X, k, true_means, true_covs, filename):
         sigma = snapshots[iter]['sigma']
         
         if iter == 0:
-            title = "Initialization: K-Means"
+            if init_kmeans:
+                title = "Initialization: K-Means"
+            else:
+                title = "Initialization: Random from data"
         else:
             title = f"Iteration: {iter}"
 
