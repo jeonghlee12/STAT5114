@@ -1,0 +1,834 @@
+ \documentclass[12pt]{article}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm, bm, bbm}
+\usepackage{enumitem}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+\usepackage{mathtools}
+
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[justification=centering]{caption}
+\usepackage{float}
+\usepackage{mdframed}
+\usepackage{subcaption}
+\usepackage{tikz,pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{hyperref}
+\allowdisplaybreaks
+
+\setenumerate[0]{label=(\alph*)}
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
+
+\newenvironment{problem}[2][Problem]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]\hspace{1pt}}{\end{trivlist}\bigskip}
+
+\begin{document}
+\title{Extra Credit: MCMC}
+\author{Jeong Hyun Lee\\
+STAT 5114 -- Statistical Inference}
+\date{April 29, 2025}
+
+\maketitle
+
+\section*{Part 1}
+
+We provide the pseudocode for the Metropolis-Hastings sampler for \(\mu,\phi\,|\,X\) in Algorithm \ref{alg:cap}.
+
+We are given our target distribution is the posterior density of \(\mu,\phi\) of a normal under standard reference priors \(p(\mu,\phi)\propto1/\phi\), hence
+\[f(\mu,\phi)=p(\mu,\phi\,|\,X)\propto\phi^{\frac{n}{2}-1}\exp\left\{-\frac{\phi}{2}\sum_{i=1}^n(x_i-\mu)^2\right\}\]
+With two parameters, we employ two proposal functions that fit the constraints of each parameter, both symmetric, such that our acceptance ratio will only depend on the ratio of the target distribution.
+
+For the proposal distribution of \(\mu\), we propose a symmetric normal proposal under some stepsize hyperparameter \(\psi_\mu\), which we tune later. For the proposal distribution of \(\phi\), we take the \(\ln\phi\), and we propose a random walk on \(\ln\phi\) under a normal, with stepsize hyperparameter \(\psi_\phi\), also subject to hyperparmeter tuning. We take the log as the variance and precision parameter must always be normal. Hence, to employ a symmetric proposal, we must do it in log-space to ensure positivity of the generated proposal values. Hence, this proposal will be symmetric in log-space, which we evaluate the acceptance probability in. Hence, we have the following set of proposals.
+\begin{align*}
+    g(\mu^\ast\,|\,\mu)&=\frac{1}{\sqrt{2\pi}\psi_\mu}\exp\left(-\frac{1}{2\psi_\phi^2}(\mu^\ast-\mu)^2\right)\\
+    \ln(\phi^\ast)\,|\,\ln(\phi)&=\ln\phi+\epsilon,\quad\epsilon\sim N(0,\psi_\phi^2)\\
+    \implies g(\ln(\phi^\ast)\,|\,\ln(\phi))&=\frac{1}{\sqrt{2\pi}\psi_\phi}\exp\left(-\frac{1}{2\psi_\phi^2}(\ln(\phi^\ast)-\ln(\phi))^2\right)
+\end{align*}
+We evaluate the acceptance ratio as follows,
+\[\frac{f(\bm\theta^\ast)}{f(\bm\theta_t)}\frac{g(\bm\theta_t\,|\,\bm\theta^\ast)}{g(\bm\theta^\ast\,|\,\bm\theta_t)}\]
+where we let \(\bm\theta=(\mu,\phi)\) and \(g(\bm\theta^\ast\,|\,\bm\theta)=g(\mu^\ast\,|\,\mu)g(\ln(\phi^\ast)\,|\,\phi)\).
+
+Since both proposals are normal, hence symmetric, we realize our acceptance ratio is simply the ratio of the posteriors.
+\[\frac{f(\bm\theta^\ast)}{f(\bm\theta_t)}\frac{g(\bm\theta_t\,|\,\bm\theta^\ast)}{g(\bm\theta^\ast\,|\,\bm\theta_t)}\propto\frac{f(\bm\theta^\ast)}{f(\bm\theta_t)}\frac{\exp\left(-\frac{1}{2\psi_\phi^2}(\mu-\mu^\ast)^2\right)\exp\left(-\frac{1}{2\psi_\phi^2}(\ln(\phi)-\ln(\phi^\ast))^2\right)}{\exp\left(-\frac{1}{2\psi_\phi^2}(\mu^\ast-\mu)^2\right)\exp\left(-\frac{1}{2\psi_\phi^2}(\ln(\phi^\ast)-\ln(\phi))^2\right)}=\frac{f(\bm\theta^\ast)}{f(\bm\theta_t)}
+\]
+
+Hence, we present the pseudocode below.
+\begin{algorithm}[H]
+\caption{Metropolis algorithm to approximate \(\mu,\phi\,|\,X\)}\label{alg:cap}
+\begin{algorithmic}[1]
+\Require \(f(x)\propto\phi^{\frac{n}{2}-1}\exp\left(-\frac{\phi}{2}\sum_{i=1}^n(x_i-\mu)^2\right)\) (target distribution), \(g(\mu^\ast|\mu)\propto\exp\left(-\frac{1}{2\psi_\phi^2}(\mu^\ast-\mu)^2\right)\), \(g(\ln\phi^\ast|\ln\phi)\propto\exp\left(-\frac{1}{2\psi_\phi^2}(\ln(\phi^\ast)-\ln(\phi))^2\right)\) (proposal distributions), \(T\) (number of iterations)
+\State Initialize \(\mu_0\) and \(\phi_0\)
+\For{\(t=0\) to \(T\)}
+    \State Draw \(\mu^\ast,\phi^\ast\) from \(g(\mu^\ast|\mu_t)\), \(g(\ln\phi^\ast|\ln\phi_t)\)
+    \State Compute acceptance ratio:
+    \[r=\frac{f(\mu^\ast,\phi^\ast)}{f(\mu_t,\phi_t)}\frac{g(\mu_t|\mu^\ast)g(\ln\phi_t|\ln\phi^\ast)}{g(\mu^\ast|\mu_t)g(\ln\phi^\ast|\ln\phi)}=\frac{f(\mu^\ast,\phi^\ast)}{f(\mu_t,\phi_t)}\]
+    \State Compute acceptance probability \(\alpha=\min(1, r)\)
+    \State Draw \(u\sim\text{uniform}(0,1)\)
+    \If{\(u<\alpha\)}
+        \State \(\mu_{t+1}\gets\mu^\ast\), \(\phi_{t+1}\gets\phi^\ast\)
+    \ElsIf{\(u\geq\alpha\)}
+        \State \(\mu_{t+1}\gets\mu_t\), \(\phi_{t+1}\gets\phi_t\)
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\section*{Part 2}
+
+We implement two versions of the Metropolis sampler, the `vanilla' Metropolis-Hastings sampler, and the Gibbs sampler, which we have the pseudocode in Algorithm \ref{alg:cap2}. In the Gibbs sample, we now take each proposal for each parameter separately, conditional on the previous accepted proposal value. That is, the Gibbs sample is in a more specific sense, sampling each parameter conditional on the accepted proposal value of all other parameter values.
+
+As mentioned, we implement the code for normal data generated from \(N(200, 0.5)\), under different sample sizes of \(N=10,30,100\). We initialize the samplers at \(\mu_0=0\) and \(\phi_0=5\).
+
+The codes are available online, where we note due to overflow constraints, the acceptance ratio is evaluated in log-scale \texttt{https://github.com/jeonghlee12/STAT5114/tree/main/MCMC}
+
+\begin{algorithm}[t]
+\caption{Gibbs sampler algorithm to approximate \(\mu,\phi\,|\,X\)}\label{alg:cap2}
+\begin{algorithmic}[1]
+\Require Same as Algorithm \ref{alg:cap}
+\State Initialize \(\mu_0\) and \(\phi_0\)
+\For{\(t=0\) to \(T\)}
+    \State Draw \(\mu^\ast,\phi^\ast\) from \(g(\mu^\ast|\mu_t)\)
+    \State Compute acceptance ratio:
+    \[r_\mu=\frac{f(\mu^\ast,\phi_t)}{f(\mu_t,\phi_t)}\frac{g(\mu_t|\mu^\ast)}{g(\mu^\ast|\mu_t)}=\frac{f(\mu^\ast,\phi_t)}{f(\mu_t,\phi_t)}\]
+    \State Compute acceptance probability \(\alpha_\mu=\min(1, r_\mu)\)
+    \State Draw \(u\sim\text{uniform}(0,1)\)
+    \If{\(u<\alpha_\mu\)}
+        \State \(\mu_{t+1}\gets\mu^\ast\)
+    \ElsIf{\(u\geq\alpha\)}
+        \State \(\mu_{t+1}\gets\mu_t\)
+    \EndIf
+    \State Draw \(g(\ln\phi^\ast|\ln\phi_t)\)
+    \State Compute acceptance ratio:
+    \[r_\phi=\frac{f(\mu_{t+1},\phi^\ast)}{f(\mu_{t+1},\phi_t)}\frac{g(\ln\phi_t|\ln\phi^\ast)}{g(\ln\phi^\ast|\ln\phi)}=\frac{f(\mu_{t+1},\phi^\ast)}{f(\mu_{t+1},\phi_t)}\]
+    \State Compute acceptance probability \(\alpha_\phi=\min(1, r_\phi)\)
+    \State Draw \(u\sim\text{uniform}(0,1)\)
+    \If{\(u<\alpha_\phi\)}
+        \State \(\phi_{t+1}\gets\phi^\ast\)
+    \ElsIf{\(u\geq\alpha\)}
+        \State \(\phi_{t+1}\gets\phi_t\)
+    \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\section*{Part 3}
+
+Here, we present summaries of the simulations under \(N=10,30,100\), and under both samplers. We provide the trace plots, with which we identify the burn-in period, histograms of the marginal posteriors after burn-in, and the contour plots of the generated samples after burn-in.
+
+We generate a total of 50000 samples to accommodate for potential long burn-in times. For the Metropolis-Hastings sampler, we used hyperparameters \(\psi_\mu=1\) and \(\psi_\phi=0.1\), and for the Gibbs sampler, we used hyperparameters \(\psi_\mu=0.5\) and \(\psi_\phi=0.1\).
+\newpage
+\subsection*{$N=10$}
+\textbf{Metropolis-Hastings}
+
+We identify under the trace plots in \autoref{fig:1}, the burn-in period for the Metropolis-Hastings sampler under \(N=10\) to be about 7000 iterations. Total acceptance rate was about 62\%, a reasonable value.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_10_vanilla.csv};
+                
+                \draw[dashed] ({axis cs:7000,0}|-{rel axis cs:0,0}) -- ({axis cs:7000,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_10_vanilla.csv};
+
+                \draw[dashed] ({axis cs:7000,0}|-{rel axis cs:0,0}) -- ({axis cs:7000,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Trace plots for Metropolis-Hastings \(N=10\) (Accept. rate: 0.62)}
+    \label{fig:1}
+\end{figure}
+\autoref{fig:2} shows the histogram of the marginal posteriors of each parameter after the burn-in.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=7001] {simulation_data/n_10_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=7001] {simulation_data/n_10_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Metropolis-Hastings \(N=10\)}
+    \label{fig:2}
+\end{figure}
+Lastly, we display the contour plots of the joint samples \(\mu,\phi\,|\,X\) after burn-in in \autoref{fig:3}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=7001] {simulation_data/n_10_vanilla.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Metropolis-Hastings \(N=10\)}
+    \label{fig:3}
+\end{figure}
+\textbf{Gibbs Sampling}
+
+We now provide similar plots for the generated sample under Gibb's method, with a burn-in time of 11500 iterations identified. The acceptance rate for \(\mu\) was about 82\% and for \(\phi\) was 93\%.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_10_gibbs.csv};
+                
+                \draw[dashed] ({axis cs:11500,0}|-{rel axis cs:0,0}) -- ({axis cs:11500,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)  (Accept. rate: 0.82)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_10_gibbs.csv};
+
+                \draw[dashed] ({axis cs:11500,0}|-{rel axis cs:0,0}) -- ({axis cs:11500,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\) (Accept. rate: 0.93)}
+    \end{subfigure}
+
+    \caption{Trace plots for Gibbs sampling \(N=10\)}
+    \label{fig:4}
+\end{figure}
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=11501] {simulation_data/n_10_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=11501] {simulation_data/n_10_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Gibbs sampling \(N=10\)}
+    \label{fig:5}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=11501] {simulation_data/n_10_gibbs.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Gibbs sampling \(N=10\)}
+    \label{fig:6}
+\end{figure}
+\newpage
+\subsection*{$N=30$}
+\textbf{Metropolis-Hastings}
+
+We identify under the trace plots in \autoref{fig:7}, the burn-in period for the Metropolis-Hastings sampler under \(N=30\) to be about 2100 iterations. Total acceptance rate was about 32\%.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_30_vanilla.csv};
+                
+                \draw[dashed] ({axis cs:2100,0}|-{rel axis cs:0,0}) -- ({axis cs:2100,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_30_vanilla.csv};
+
+                \draw[dashed] ({axis cs:2100,0}|-{rel axis cs:0,0}) -- ({axis cs:2100,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Trace plots for Metropolis-Hastings \(N=30\) (Accept. rate: 0.32)}
+    \label{fig:7}
+\end{figure}
+\autoref{fig:8} displays the marginal posterior distributions.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=2101] {simulation_data/n_30_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=2101] {simulation_data/n_30_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Metropolis-Hastings \(N=30\)}
+    \label{fig:8}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=2101] {simulation_data/n_30_vanilla.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Metropolis-Hastings \(N=30\)}
+    \label{fig:9}
+\end{figure}
+\textbf{Gibbs Sampling}
+
+We now provide similar plots for the generated sample under Gibb's method, with a burn-in time of 3600 iterations identified. The acceptance rate for \(\mu\) was about 55\% and for \(\phi\) was 88\%.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_30_gibbs.csv};
+                
+                \draw[dashed] ({axis cs:3600,0}|-{rel axis cs:0,0}) -- ({axis cs:3600,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)  (Accept. rate: 0.55)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_30_gibbs.csv};
+
+                \draw[dashed] ({axis cs:3600,0}|-{rel axis cs:0,0}) -- ({axis cs:3600,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\) (Accept. rate: 0.88)}
+    \end{subfigure}
+
+    \caption{Trace plots for Gibbs sampling \(N=30\)}
+    \label{fig:10}
+\end{figure}
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=3601] {simulation_data/n_30_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=3601] {simulation_data/n_30_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Gibbs sampling \(N=30\)}
+    \label{fig:11}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=3601] {simulation_data/n_30_gibbs.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Gibbs sampling \(N=30\)}
+    \label{fig:12}
+\end{figure}
+
+\newpage
+\subsection*{$N=100$}
+\textbf{Metropolis-Hastings}
+
+Lastly, we identify under the trace plots in \autoref{fig:13}, the burn-in period for the Metropolis-Hastings sampler under \(N=100\) to be about 1350 iterations. Total acceptance rate was about 18\%.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_100_vanilla.csv};
+                
+                \draw[dashed] ({axis cs:1350,0}|-{rel axis cs:0,0}) -- ({axis cs:1350,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_100_vanilla.csv};
+
+                \draw[dashed] ({axis cs:1350,0}|-{rel axis cs:0,0}) -- ({axis cs:1350,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Trace plots for Metropolis-Hastings \(N=100\) (Accept. rate: 0.18)}
+    \label{fig:13}
+\end{figure}
+\autoref{fig:14} displays the marginal posterior distributions.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=1351] {simulation_data/n_100_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=1351] {simulation_data/n_100_vanilla.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Metropolis-Hastings \(N=100\)}
+    \label{fig:14}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=1351] {simulation_data/n_100_vanilla.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Metropolis-Hastings \(N=100\)}
+    \label{fig:15}
+\end{figure}
+\textbf{Gibbs Sampling}
+
+We now provide similar plots for the generated sample under Gibb's method, with a burn-in time of 1500 iterations identified. The acceptance rate for \(\mu\) was about 36\% and for \(\phi\) was 79\%.
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\mu\)},
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=mu,
+                    col sep=comma
+                ] {simulation_data/n_100_gibbs.csv};
+                
+                \draw[dashed] ({axis cs:1500,0}|-{rel axis cs:0,0}) -- ({axis cs:1500,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\mu\)  (Accept. rate: 0.36)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel={Iteration},
+                ylabel={\(\phi\)},
+                mark size=1pt,
+                scaled y ticks=false
+            ]
+                \addplot+[mark=none] table[
+                    x expr=\coordindex,
+                    y=phi,
+                    col sep=comma
+                ] {simulation_data/n_100_gibbs.csv};
+
+                \draw[dashed] ({axis cs:1500,0}|-{rel axis cs:0,0}) -- ({axis cs:1500,0}|-{rel axis cs:0,1});
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Trace plot for \(\phi\) (Accept. rate: 0.79)}
+    \end{subfigure}
+
+    \caption{Trace plots for Gibbs sampling \(N=100\)}
+    \label{fig:16}
+\end{figure}
+\begin{figure}[H]
+    % First plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}
+            \begin{axis}[
+                xlabel=\(\mu\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25
+                ] table [col sep=comma, y index=0, skip first n=1501] {simulation_data/n_100_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\mu\)}
+    \end{subfigure}
+    \hspace{2em}
+    % Second plot
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \begin{tikzpicture}[scale=0.98]
+            \begin{axis}[
+                xlabel=\(\phi\),
+                ymin=0,
+                bar width=1cm,
+                xtick pos=left,
+                ytick pos=left,
+                xticklabel style={font=\footnotesize},
+                scaled x ticks=false,
+                ybar
+            ]
+                \addplot[
+                    ybar,
+                    hist={bins=10},
+                    fill=blue!25,
+                ] table [col sep=comma, y index=1, skip first n=1501] {simulation_data/n_100_gibbs.csv};
+            \end{axis}
+        \end{tikzpicture}
+        \caption{Histogram for \(\phi\)}
+    \end{subfigure}
+
+    \caption{Histograms for Gibbs sampling \(N=100\)}
+    \label{fig:17}
+\end{figure}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            xlabel={\(\mu\)},
+            ylabel={\(\phi\)},
+            mark size=1pt,
+            scaled y ticks=false
+        ]
+            \addplot+[only marks, mark size=1pt] table [x index=0, y index=1, col sep=comma, skip first n=1501] {simulation_data/n_100_gibbs.csv};
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Contour plot of the joint sample for Gibbs sampling \(N=100\)}
+    \label{fig:18}
+\end{figure}
+\end{document}
